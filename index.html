@@ -54,6 +54,11 @@
             justify-content: center;
             align-items: center;
             pointer-events: none;
+            transition: opacity 0.8s ease;
+        }
+
+        .npc-character-container.fade-out {
+            opacity: 0;
         }
 
         #npcCanvas {
@@ -78,7 +83,7 @@
             pointer-events: none;
         }
 
-        /* 디스코드 스타일 임베드 카드 (방패 아이콘 반영) */
+        /* 디스코드 스타일 임베드 카드 */
         .embed-card {
             width: 100%;
             max-width: 950px;
@@ -228,7 +233,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* 초상화 */
         .portrait-frame {
             position: relative;
             width: 100px;
@@ -259,6 +263,12 @@
             font-weight: 800;
             letter-spacing: 0.5px;
             text-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
+            transition: color 0.3s;
+        }
+
+        .npc-name.system {
+            color: #00bcd4;
+            text-shadow: 0 0 8px rgba(0, 188, 212, 0.5);
         }
 
         .dialogue-text {
@@ -334,16 +344,16 @@
 
     <canvas id="bgCanvas"></canvas>
 
-    <div class="npc-character-container">
+    <div class="npc-character-container" id="npcContainer">
         <canvas id="npcCanvas"></canvas>
     </div>
 
     <div class="ui-container">
-        <!-- 방패 아이콘이 포함된 디스코드 임베드 카드 (대사 완료 후 등장) -->
+        <!-- 디스코드 스타일 임베드 카드 (시스템 질문 단계에서 등장) -->
         <div class="embed-card" id="embedCard">
-            <div class="embed-site-name" id="embedSiteName">제목 없는 알피지 시세 리스트</div>
-            <a class="embed-title" id="embedTitleLink" href="https://discord-team-dawn.github.io/UNTITLED-RPG-VALUE-LIST/" target="_blank">제목 없는 알피지 시세 리스트</a>
-            <div class="embed-description" id="embedDesc">로블록스 제목 없는 알피지의 아이템 시세표와 거래 계산기</div>
+            <div class="embed-site-name">제목 없는 알피지 시세 리스트</div>
+            <a class="embed-title" href="https://discord-team-dawn.github.io/UNTITLED-RPG-VALUE-LIST/" target="_blank">제목 없는 알피지 시세 리스트</a>
+            <div class="embed-description">로블록스 제목 없는 알피지의 아이템 시세표와 거래 계산기</div>
             <div class="embed-thumbnail">
                 <svg class="shield-icon" viewBox="0 0 24 24">
                     <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.37-2.91 8.44-7 9.5-4.09-1.06-7-5.13-7-9.5v-4.7l7-3.12z"/>
@@ -376,23 +386,34 @@
                 text: "음.. 아무래도 길을 찾고 있는 것 같구나. 네가 가고 싶은 곳은 어디지?",
                 choices: [
                     { text: "미정", next: "confirm_undefined" },
-                    { text: "시세표를 보러 갈래", next: "confirm_market" }
+                    { text: "시세표를 보러 갈래", next: "say_market" }
                 ]
             },
+            // [시세표] 선택 1단계: NPC 대사 출력
+            say_market: {
+                npc: "???",
+                text: "그래, 시세표를 보고 꼭 거래를 잘하거라.",
+                autoNextDelay: 1500, // 대사 끝난 뒤 사라지는 연출 타이머
+                next: "system_market_question"
+            },
+            // [시세표] 선택 2단계: NPC 사라짐 + 임베드 카드 등장 + 시스템 질문
+            system_market_question: {
+                npc: "[ 시스템 ]",
+                isSystem: true,
+                hideNpcModel: true,
+                showEmbed: true,
+                text: "이 포탈로 이동하시겠습니까?",
+                choices: [
+                    { text: "입장", action: "enter_market" },
+                    { text: "취소", next: "start" }
+                ]
+            },
+            // [미정] 선택
             confirm_undefined: {
                 npc: "???",
                 text: "아직 이곳은 정해지지 않았단다. 이 포탈로 이동하시겠습니까?",
                 choices: [
                     { text: "입장", action: "enter_undefined" },
-                    { text: "취소", next: "start" }
-                ]
-            },
-            confirm_market: {
-                npc: "???",
-                text: "그래, 시세표를 보고 꼭 거래를 잘하거라. 이 포탈로 이동하시겠습니까?",
-                showEmbed: true, // 대사 타이핑 완료 후 임베드 카드 표시 플래그
-                choices: [
-                    { text: "입장", action: "enter_market" },
                     { text: "취소", next: "start" }
                 ]
             }
@@ -401,6 +422,7 @@
         let currentStep = "start";
         let isTyping = false;
         let typingTimeout = null;
+        let autoNextTimeout = null;
         let fullText = "";
         let textIndex = 0;
         let isPortalRunning = false;
@@ -413,20 +435,41 @@
         const flashOverlay = document.getElementById('flashOverlay');
         const portalCanvas = document.getElementById('portalCanvas');
         const embedCard = document.getElementById('embedCard');
+        const npcContainer = document.getElementById('npcContainer');
 
         function startDialogue(stepKey) {
             currentStep = stepKey;
             const data = dialogueTree[stepKey];
+            
+            clearTimeout(autoNextTimeout);
+
             npcNameEl.innerText = data.npc;
+            if (data.isSystem) {
+                npcNameEl.classList.add('system');
+            } else {
+                npcNameEl.classList.remove('system');
+            }
+
+            // 상단 NPC 사라짐/나타남 연출
+            if (data.hideNpcModel) {
+                npcContainer.classList.add('fade-out');
+            } else {
+                npcContainer.classList.remove('fade-out');
+            }
+
+            // 임베드 카드 표시
+            if (data.showEmbed) {
+                embedCard.classList.add('visible');
+            } else {
+                embedCard.classList.remove('visible');
+            }
+
             fullText = data.text;
             textIndex = 0;
             dialogueTextEl.innerText = "";
             choicesContainerEl.classList.remove('visible');
             choicesContainerEl.innerHTML = "";
             nextArrowEl.classList.remove('visible');
-            
-            // 대사 출력 전에는 임베드 숨김
-            embedCard.classList.remove('visible');
 
             isTyping = true;
             typeNextChar();
@@ -446,17 +489,17 @@
             clearTimeout(typingTimeout);
             dialogueTextEl.innerText = fullText;
             isTyping = false;
-            nextArrowEl.classList.add('visible');
 
             const data = dialogueTree[currentStep];
-            
-            // 대사가 완전히 출력된 후에만 임베드 카드 표시 (시세표 단계일 때)
-            if (data.showEmbed) {
-                embedCard.classList.add('visible');
-            }
 
             if (data.choices) {
+                nextArrowEl.classList.add('visible');
                 showChoices(data.choices);
+            } else if (data.autoNextDelay && data.next) {
+                // 대사 출력이 완료되고 몇 초 후에 자동으로 다음 연출(시스템 질문)로 이동
+                autoNextTimeout = setTimeout(() => {
+                    startDialogue(data.next);
+                }, data.autoNextDelay);
             }
         }
 
@@ -471,7 +514,6 @@
                     e.preventDefault();
                     e.stopPropagation();
 
-                    // 선택지를 누르는 순간 임베드 카드 숨기기
                     embedCard.classList.remove('visible');
 
                     if (choice.action === "enter_undefined") {
@@ -495,6 +537,12 @@
             if (isPortalRunning) return;
             if (isTyping) {
                 completeTyping();
+            } else {
+                const data = dialogueTree[currentStep];
+                if (data.autoNextDelay && data.next) {
+                    clearTimeout(autoNextTimeout);
+                    startDialogue(data.next);
+                }
             }
         };
 
