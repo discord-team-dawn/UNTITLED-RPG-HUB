@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>제목 없는 RPG HUB</title>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030205;
+            color: #ffffff;
+        }
+
+        /* 배경 캔버스 */
+        #bgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* 상단 검은 NPC 연출 영역 */
+        .npc-character-container {
+            position: absolute;
+            top: 4%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 380px;
+            height: 420px;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        #npcCanvas {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 0 30px rgba(0, 0, 0, 0.95));
+        }
+
+        /* 게임 UI 메인 레이어 */
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 24px;
+            pointer-events: none;
+        }
+
+        /* 선택지 박스 영역 */
+        .choices-container {
+            width: 100%;
+            max-width: 950px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 18px;
+            pointer-events: auto;
+            opacity: 0;
+            transform: translateY(15px);
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .choices-container.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .choice-btn {
+            background: linear-gradient(135deg, rgba(22, 16, 35, 0.94), rgba(10, 7, 18, 0.97));
+            border: 2px solid #5a447c;
+            border-radius: 12px;
+            color: #f0ebfa;
+            padding: 16px 24px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s ease;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            letter-spacing: -0.3px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .choice-btn:hover, .choice-btn:active {
+            background: linear-gradient(135deg, rgba(45, 28, 75, 0.98), rgba(20, 12, 38, 0.99));
+            border-color: #a87aff;
+            color: #ffffff;
+            box-shadow: 0 0 22px rgba(168, 122, 255, 0.45);
+            transform: translateX(6px);
+        }
+
+        .choice-btn::after {
+            content: '▶';
+            font-size: 0.95rem;
+            color: #a87aff;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .choice-btn:hover::after, .choice-btn:active::after {
+            opacity: 1;
+            transform: translateX(3px);
+        }
+
+        /* 메인 대화창 박스 */
+        .dialogue-box {
+            position: relative;
+            width: 100%;
+            max-width: 950px;
+            min-height: 170px;
+            background: linear-gradient(180deg, rgba(22, 19, 26, 0.94) 0%, rgba(12, 10, 15, 0.98) 100%);
+            border: 2px solid #d4cfc7;
+            border-radius: 16px;
+            padding: 26px 32px;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.85), 0 10px 35px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            cursor: pointer;
+            margin-bottom: 16px;
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 검은 아우라 초상화 */
+        .portrait-frame {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            flex-shrink: 0;
+            border-radius: 12px;
+            background: #000;
+            border: 2px solid rgba(212, 207, 199, 0.4);
+            overflow: hidden;
+            box-shadow: 0 0 18px rgba(0, 0, 0, 0.9), inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .portrait-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 대사 컨텐츠 */
+        .dialogue-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .npc-name {
+            color: #ff6b6b;
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
+        }
+
+        .dialogue-text {
+            color: #f7f4ee;
+            font-size: 1.2rem;
+            font-weight: 500;
+            line-height: 1.6;
+            min-height: 55px;
+            word-break: keep-all;
+            white-space: pre-wrap;
+            letter-spacing: -0.2px;
+        }
+
+        /* 하단 오른쪽 삼각 화살표 */
+        .next-arrow {
+            position: absolute;
+            right: 26px;
+            bottom: 20px;
+            width: 0;
+            height: 0;
+            border-left: 11px solid transparent;
+            border-right: 11px solid transparent;
+            border-top: 15px solid #ffffff;
+            filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+            animation: bounce 0.8s infinite alternate ease-in-out;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .next-arrow.visible {
+            opacity: 1;
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(6px); }
+        }
+
+        /* 포탈 애니메이션 캔버스 */
+        #portalCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 50;
+            pointer-events: none; /* 포탈 실행 중 클릭 방해 차단 */
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #portalCanvas.active {
+            opacity: 1;
+        }
+
+        /* 하얀 빛 전환 레이어 */
+        .flash-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease-in;
+        }
+
+        .flash-overlay.active {
+            opacity: 1;
+        }
+
+        /* 반응형 스타일 */
+        @media (max-width: 768px) {
+            .npc-character-container {
+                width: 280px;
+                height: 320px;
+                top: 3%;
+            }
+            .ui-container {
+                padding: 12px;
+            }
+            .dialogue-box {
+                padding: 18px;
+                gap: 14px;
+                min-height: 135px;
+                margin-bottom: 10px;
+                border-radius: 12px;
+            }
+            .portrait-frame {
+                width: 75px;
+                height: 75px;
+                border-radius: 8px;
+            }
+            .npc-name {
+                font-size: 1.05rem;
+            }
+            .dialogue-text {
+                font-size: 1.02rem;
+            }
+            .choice-btn {
+                padding: 14px 18px;
+                font-size: 1.02rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 배경 Canvas -->
+    <canvas id="bgCanvas"></canvas>
+
+    <!-- 상단 대형 검은 수상한 인물 NPC 연출 -->
+    <div class="npc-character-container">
+        <canvas id="npcCanvas"></canvas>
+    </div>
+
+    <!-- 게임 UI 영역 -->
+    <div class="ui-container">
+        <div class="choices-container" id="choicesContainer"></div>
+
+        <div class="dialogue-box" id="dialogueBox">
+            <div class="portrait-frame">
+                <canvas id="portraitCanvas" class="portrait-canvas"></canvas>
+            </div>
+            <div class="dialogue-content">
+                <div class="npc-name" id="npcName">???</div>
+                <div class="dialogue-text" id="dialogueText"></div>
+            </div>
+            <div class="next-arrow" id="nextArrow"></div>
+        </div>
+    </div>
+
+    <!-- 포탈 회전 애니메이션 캔버스 -->
+    <canvas id="portalCanvas"></canvas>
+
+    <!-- 하얀 빛 트랜지션 레이어 -->
+    <div class="flash-overlay" id="flashOverlay"></div>
+
+    <script>
+        // --- 1. 대화 시나리오 데이터 ---
+        const dialogueTree = {
+            start: {
+                npc: "???",
+                text: "음.. 아무래도 길을 찾고 있는 것 같구나. 네가 가고 싶은 곳은 어디지?",
+                choices: [
+                    { text: "미정", next: "choice1" },
+                    { text: "시세표를 보러 갈래", next: "choice2" }
+                ]
+            },
+            choice1: {
+                npc: "???",
+                text: "아직 이곳은 정해지지 않았단다. 어디로 갈래?",
+                action: "reload" // 새로고침
+            },
+            choice2: {
+                npc: "???",
+                text: "그래, 시세표를 보고 꼭 거래를 잘하거라.",
+                url: "https://discord-team-dawn.github.io/UNTITLED-RPG-VALUE-LIST/" // 이동할 링크
+            }
+        };
+
+        let currentStep = "start";
+        let isTyping = false;
+        let typingTimeout = null;
+        let fullText = "";
+        let textIndex = 0;
+        let isPortalRunning = false;
+
+        const dialogueTextEl = document.getElementById('dialogueText');
+        const npcNameEl = document.getElementById('npcName');
+        const choicesContainerEl = document.getElementById('choicesContainer');
+        const nextArrowEl = document.getElementById('nextArrow');
+        const dialogueBox = document.getElementById('dialogueBox');
+        const flashOverlay = document.getElementById('flashOverlay');
+        const portalCanvas = document.getElementById('portalCanvas');
+
+        // --- 2. 타이핑 효과 (속도: 60ms) ---
+        function startDialogue(stepKey) {
+            currentStep = stepKey;
+            const data = dialogueTree[stepKey];
+            npcNameEl.innerText = data.npc;
+            fullText = data.text;
+            textIndex = 0;
+            dialogueTextEl.innerText = "";
+            choicesContainerEl.classList.remove('visible');
+            choicesContainerEl.innerHTML = "";
+            nextArrowEl.classList.remove('visible');
+            isTyping = true;
+
+            typeNextChar();
+        }
+
+        function typeNextChar() {
+            if (textIndex < fullText.length) {
+                dialogueTextEl.innerText += fullText.charAt(textIndex);
+                textIndex++;
+                typingTimeout = setTimeout(typeNextChar, 60);
+            } else {
+                completeTyping();
+            }
+        }
+
+        function completeTyping() {
+            clearTimeout(typingTimeout);
+            dialogueTextEl.innerText = fullText;
+            isTyping = false;
+            nextArrowEl.classList.add('visible');
+
+            const data = dialogueTree[currentStep];
+            if (data.choices) {
+                showChoices(data.choices);
+            }
+        }
+
+        function showChoices(choices) {
+            choicesContainerEl.innerHTML = "";
+            choices.forEach(choice => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                btn.innerText = choice.text;
+                
+                const handleChoiceAction = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startDialogue(choice.next);
+                };
+
+                btn.addEventListener('click', handleChoiceAction);
+                btn.addEventListener('touchend', handleChoiceAction);
+
+                choicesContainerEl.appendChild(btn);
+            });
+            choicesContainerEl.classList.add('visible');
+        }
+
+        // 대화창 클릭/터치 이벤트
+        const handleDialogueBoxInteraction = (e) => {
+            if (isPortalRunning) return;
+            if (isTyping) {
+                completeTyping();
+            } else {
+                const data = dialogueTree[currentStep];
+                if (data.url) {
+                    triggerPortalSequence(data.url);
+                } else if (data.action === "reload") {
+                    triggerPortalSequence(null, true);
+                }
+            }
+        };
+
+        dialogueBox.addEventListener('click', handleDialogueBoxInteraction);
+        dialogueBox.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            handleDialogueBoxInteraction(e);
+        });
+
+        // --- 3. 배경 Canvas 애니메이션 ---
+        const bgCanvas = document.getElementById('bgCanvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        let bgParticles = [];
+
+        function resizeBg() {
+            bgCanvas.width = window.innerWidth;
+            bgCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeBg);
+        resizeBg();
+
+        for (let i = 0; i < 45; i++) {
+            bgParticles.push({
+                x: Math.random() * bgCanvas.width,
+                y: Math.random() * bgCanvas.height,
+                size: Math.random() * 2.2 + 1,
+                speedY: -(Math.random() * 0.7 + 0.2),
+                opacity: Math.random()
+            });
+        }
+
+        function renderBg() {
+            bgCtx.fillStyle = '#030206';
+            bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+            bgCtx.strokeStyle = 'rgba(80, 60, 110, 0.1)';
+            bgCtx.lineWidth = 1;
+            const gridGap = 70;
+            for (let x = 0; x < bgCanvas.width; x += gridGap) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(x, 0);
+                bgCtx.lineTo(x, bgCanvas.height);
+                bgCtx.stroke();
+            }
+            for (let y = 0; y < bgCanvas.height; y += gridGap) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(0, y);
+                bgCtx.lineTo(bgCanvas.width, y);
+                bgCtx.stroke();
+            }
+
+            const grad = bgCtx.createRadialGradient(bgCanvas.width / 2, bgCanvas.height / 2, 50, bgCanvas.width / 2, bgCanvas.height / 2, bgCanvas.width * 0.7);
+            grad.addColorStop(0, 'rgba(50, 25, 80, 0.35)');
+            grad.addColorStop(1, 'rgba(3, 2, 6, 0.98)');
+            bgCtx.fillStyle = grad;
+            bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+            bgCtx.fillStyle = 'rgba(183, 148, 255, 0.6)';
+            bgParticles.forEach(p => {
+                p.y += p.speedY;
+                if (p.y < 0) p.y = bgCanvas.height;
+                bgCtx.beginPath();
+                bgCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                bgCtx.fill();
+            });
+
+            requestAnimationFrame(renderBg);
+        }
+        renderBg();
+
+        // --- 4. 상단 NPC 연출 ---
+        const npcCanvas = document.getElementById('npcCanvas');
+        const nCtx = npcCanvas.getContext('2d');
+        npcCanvas.width = 380;
+        npcCanvas.height = 420;
+
+        let npcTick = 0;
+
+        function renderNpc() {
+            nCtx.clearRect(0, 0, 380, 420);
+            npcTick += 0.03;
+
+            const cx = 190;
+            const cy = 210;
+
+            nCtx.save();
+            nCtx.translate(cx, cy);
+            for (let i = 0; i < 8; i++) {
+                const angle = npcTick * 0.8 + (i * Math.PI / 4);
+                const rx = Math.sin(angle) * 20;
+                const ry = Math.cos(angle * 1.2) * 15;
+
+                const auraGrad = nCtx.createRadialGradient(rx, ry, 12, rx, ry, 95);
+                auraGrad.addColorStop(0, 'rgba(30, 10, 50, 0.9)');
+                auraGrad.addColorStop(0.5, 'rgba(120, 25, 180, 0.3)');
+                auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                nCtx.fillStyle = auraGrad;
+                nCtx.beginPath();
+                nCtx.arc(rx, ry, 95, 0, Math.PI * 2);
+                nCtx.fill();
+            }
+            nCtx.restore();
+
+            nCtx.save();
+            nCtx.fillStyle = '#06040a';
+            nCtx.beginPath();
+            nCtx.moveTo(70, 410);
+            nCtx.quadraticCurveTo(cx, 230, 310, 410);
+            nCtx.fill();
+
+            nCtx.fillStyle = '#0b0812';
+            nCtx.beginPath();
+            nCtx.moveTo(cx, 100);
+            nCtx.quadraticCurveTo(cx + 70, 130, cx + 65, 220);
+            nCtx.quadraticCurveTo(cx, 250, cx - 65, 220);
+            nCtx.quadraticCurveTo(cx - 70, 130, cx, 100);
+            nCtx.fill();
+
+            nCtx.fillStyle = '#000000';
+            nCtx.beginPath();
+            nCtx.arc(cx, 175, 52, 0, Math.PI * 2);
+            nCtx.fill();
+
+            const eyeGlow = Math.abs(Math.sin(npcTick * 2)) * 0.4 + 0.6;
+            nCtx.fillStyle = `rgba(255, 40, 80, ${eyeGlow})`;
+            nCtx.shadowColor = '#ff1a4b';
+            nCtx.shadowBlur = 15;
+
+            nCtx.beginPath();
+            nCtx.ellipse(cx - 18, 170, 5, 2.2, -0.2, 0, Math.PI * 2);
+            nCtx.ellipse(cx + 18, 170, 5, 2.2, 0.2, 0, Math.PI * 2);
+            nCtx.fill();
+
+            nCtx.restore();
+
+            requestAnimationFrame(renderNpc);
+        }
+        renderNpc();
+
+        // --- 5. 초상화 Canvas ---
+        const portraitCanvas = document.getElementById('portraitCanvas');
+        const pCtx = portraitCanvas.getContext('2d');
+        portraitCanvas.width = 100;
+        portraitCanvas.height = 100;
+
+        let auraAngle = 0;
+        function renderPortrait() {
+            pCtx.fillStyle = '#000000';
+            pCtx.fillRect(0, 0, 100, 100);
+
+            auraAngle += 0.04;
+            pCtx.save();
+            pCtx.translate(50, 50);
+            
+            for (let i = 0; i < 6; i++) {
+                pCtx.rotate(auraAngle + i);
+                const pGrad = pCtx.createRadialGradient(0, 0, 6, 0, 0, 45);
+                pGrad.addColorStop(0, 'rgba(150, 40, 240, 0.85)');
+                pGrad.addColorStop(0.5, 'rgba(30, 0, 60, 0.5)');
+                pGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                pCtx.fillStyle = pGrad;
+                pCtx.fillRect(-45, -45, 90, 90);
+            }
+            pCtx.restore();
+
+            requestAnimationFrame(renderPortrait);
+        }
+        renderPortrait();
+
+        // --- 6. 회전 포탈 & 하얀 빛 연출 ---
+        const portalCtx = portalCanvas.getContext('2d');
+
+        function resizePortal() {
+            portalCanvas.width = window.innerWidth;
+            portalCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizePortal);
+        resizePortal();
+
+        function triggerPortalSequence(targetUrl, isReload = false) {
+            if (isPortalRunning) return;
+            isPortalRunning = true;
+            portalCanvas.classList.add('active');
+
+            let scale = 0;
+            let rotation = 0;
+            let speed = 0.06;
+            let maxScale = Math.max(portalCanvas.width, portalCanvas.height) / 60;
+
+            function animatePortal() {
+                portalCtx.clearRect(0, 0, portalCanvas.width, portalCanvas.height);
+
+                const cx = portalCanvas.width / 2;
+                const cy = portalCanvas.height / 2;
+
+                scale += (maxScale - scale) * 0.035 + 0.08;
+                rotation += speed;
+                speed += 0.004;
+
+                portalCtx.save();
+                portalCtx.translate(cx, cy);
+                portalCtx.rotate(rotation);
+                portalCtx.scale(scale, scale);
+
+                for (let i = 0; i < 12; i++) {
+                    portalCtx.rotate((Math.PI * 2) / 12);
+                    const pGrad = portalCtx.createRadialGradient(0, 0, 2, 25, 25, 50);
+                    pGrad.addColorStop(0, 'rgba(255, 60, 100, 0.9)');
+                    pGrad.addColorStop(0.4, 'rgba(180, 20, 220, 0.7)');
+                    pGrad.addColorStop(0.8, 'rgba(80, 0, 150, 0.3)');
+                    pGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                    portalCtx.fillStyle = pGrad;
+                    portalCtx.beginPath();
+                    portalCtx.arc(20, 0, 30, 0, Math.PI * 2);
+                    portalCtx.fill();
+                }
+
+                const coreGrad = portalCtx.createRadialGradient(0, 0, 0, 0, 0, 25);
+                coreGrad.addColorStop(0, '#ffffff');
+                coreGrad.addColorStop(0.5, '#ff4b8b');
+                coreGrad.addColorStop(1, 'rgba(147, 0, 255, 0)');
+                portalCtx.fillStyle = coreGrad;
+                portalCtx.beginPath();
+                portalCtx.arc(0, 0, 25, 0, Math.PI * 2);
+                portalCtx.fill();
+
+                portalCtx.restore();
+
+                if (scale < maxScale) {
+                    requestAnimationFrame(animatePortal);
+                } else {
+                    flashOverlay.classList.add('active');
+                    setTimeout(() => {
+                        if (isReload) {
+                            window.location.reload();
+                        } else if (targetUrl) {
+                            window.location.href = targetUrl;
+                        }
+                    }, 800);
+                }
+            }
+
+            animatePortal();
+        }
+
+        // 실행 시작
+        startDialogue('start');
+    </script>
+</body>
+</html>
